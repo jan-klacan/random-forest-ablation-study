@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -22,6 +23,24 @@ def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
 
+def _bootstrap_predict_worker(
+    model_class: type,
+    model_kwargs: dict[str, Any],
+    X_boot: np.ndarray,
+    y_boot: np.ndarray,
+    X_test: np.ndarray,
+) -> np.ndarray:
+    model = model_class(**model_kwargs)
+    model.fit(X_boot, y_boot)
+    return np.asarray(model.predict(X_test), dtype=np.float64)
+
+
+def _bootstrap_predict_worker_from_tuple(
+    args: tuple[type, dict[str, Any], np.ndarray, np.ndarray, np.ndarray]
+) -> np.ndarray:
+    return _bootstrap_predict_worker(*args)
+
+
 def empirical_bias_variance(
     model_class: type,
     model_kwargs: dict[str, Any],
@@ -31,6 +50,7 @@ def empirical_bias_variance(
     y_test: np.ndarray,
     n_bootstrap: int = 50,
     seed: int = 42,
+    n_jobs: int = 1,
 ) -> tuple[float, float]:
     X_train = np.asarray(X_train, dtype=np.float64)
     y_train = np.asarray(y_train, dtype=np.float64)
@@ -42,6 +62,7 @@ def empirical_bias_variance(
 
     all_predictions: list[np.ndarray] = []
     base_seed = int(model_kwargs.get("random_state", 0))
+    worker_args: list[tuple[type, dict[str, Any], np.ndarray, np.ndarray, np.ndarray]] = []
 
     for i in range(n_bootstrap):
         bootstrap_indices = rng.choice(n_train, size=n_train, replace=True)
@@ -51,10 +72,15 @@ def empirical_bias_variance(
         iter_kwargs = dict(model_kwargs)
         iter_kwargs["random_state"] = base_seed + i
 
-        model = model_class(**iter_kwargs)
-        model.fit(X_boot, y_boot)
-        preds = model.predict(X_test)
-        all_predictions.append(np.asarray(preds, dtype=np.float64))
+        worker_args.append((model_class, iter_kwargs, X_boot, y_boot, X_test))
+
+    if n_jobs <= 1:
+        for args in worker_args:
+            all_predictions.append(_bootstrap_predict_worker(*args))
+    else:
+        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+            for preds in executor.map(_bootstrap_predict_worker_from_tuple, worker_args):
+                all_predictions.append(preds)
 
     pred_matrix = np.vstack(all_predictions)
     mean_predictions = np.mean(pred_matrix, axis=0)
