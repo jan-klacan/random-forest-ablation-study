@@ -128,6 +128,17 @@ ABLATION_PROFILES: dict[str, AblationProfile] = {
         n_bias_bootstrap=12,
         max_samples_per_dataset=60000,
     ),
+    "cd_test": AblationProfile(
+        name="cd_test",
+        configs={
+            key: value
+            for key, value in _build_runtime_balanced_configs(n_estimators=50).items()
+            if key in {"C_FeatureRandOnly", "D_FullRandomForest"}
+        },
+        seeds=[42, 123, 7],
+        n_bias_bootstrap=6,
+        max_samples_per_dataset=40000,
+    ),    
     "full": AblationProfile(
         name="full",
         configs=_build_configs(n_estimators=150),
