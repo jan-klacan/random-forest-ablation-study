@@ -184,6 +184,102 @@ def plot_bias_variance_decomposition(
     return out
 
 
+def plot_bias_variance_clarity(
+    results_df: pd.DataFrame,
+    output_dir: str = "project/results",
+) -> Path:
+    _apply_style()
+    datasets, configs = _prepare(results_df)
+    x = np.arange(len(configs))
+    width = 0.36
+
+    fig, axes = plt.subplots(2, len(datasets), figsize=(6.6 * len(datasets), 8), squeeze=False)
+
+    for idx, dataset in enumerate(datasets):
+        subset = results_df[results_df["dataset"] == dataset].set_index("config")
+        bias_vals = np.array([float(subset.loc[cfg, "bias_squared"]) for cfg in configs], dtype=np.float64)
+        var_vals = np.array([float(subset.loc[cfg, "variance"]) for cfg in configs], dtype=np.float64)
+
+        ax_bias = axes[0, idx]
+        bars_b = ax_bias.bar(
+            x,
+            bias_vals,
+            color="#4C78A8",
+            edgecolor="#444444",
+            linewidth=0.5,
+        )
+        ax_bias.set_xticks(x)
+        ax_bias.set_xticklabels([CONFIG_LABELS.get(c, c) for c in configs])
+        ax_bias.set_title(f"Bias² (linear): {dataset}")
+        ax_bias.set_ylabel("Bias²")
+        ax_bias.set_ylim(0, max(1.05 * float(np.max(bias_vals)), 1.0))
+
+        ax_var = axes[1, idx]
+        bars_v = ax_var.bar(
+            x,
+            var_vals,
+            color="#54A24B",
+            edgecolor="#444444",
+            linewidth=0.5,
+        )
+        ax_var.set_xticks(x)
+        ax_var.set_xticklabels([CONFIG_LABELS.get(c, c) for c in configs])
+        ax_var.set_title(f"Variance (linear): {dataset}")
+        ax_var.set_ylabel("Variance")
+        ax_var.set_ylim(0, max(1.10 * float(np.max(var_vals)), 1.0))
+
+        if len(configs) <= 4:
+            _annotate_bars(ax_bias, bars_b, fmt="{:.2e}", rotation=90)
+            _annotate_bars(ax_var, bars_v, fmt="{:.2e}", rotation=90)
+
+    fig.suptitle("Bias-Variance Components (Unstacked, Linear Scale)", fontsize=15, fontweight="bold")
+    out = Path(output_dir) / "bias_variance_clarity.png"
+    _save(fig, out)
+    return out
+
+
+def plot_bias_variance_relative(
+    results_df: pd.DataFrame,
+    output_dir: str = "project/results",
+) -> Path:
+    _apply_style()
+    datasets, configs = _prepare(results_df)
+    x = np.arange(len(configs))
+    width = 0.36
+
+    fig, axes = plt.subplots(1, len(datasets), figsize=(6.8 * len(datasets), 5.2), squeeze=False)
+
+    for idx, dataset in enumerate(datasets):
+        ax = axes[0, idx]
+        subset = results_df[results_df["dataset"] == dataset].set_index("config")
+        bias_vals = np.array([float(subset.loc[cfg, "bias_squared"]) for cfg in configs], dtype=np.float64)
+        var_vals = np.array([float(subset.loc[cfg, "variance"]) for cfg in configs], dtype=np.float64)
+
+        baseline_bias = bias_vals[0] if bias_vals[0] != 0 else 1.0
+        baseline_var = var_vals[0] if var_vals[0] != 0 else 1.0
+        bias_rel = bias_vals / baseline_bias
+        var_rel = var_vals / baseline_var
+
+        bars1 = ax.bar(x - width / 2, bias_rel, width=width, label="Bias² / A", color="#4C78A8", edgecolor="#444444", linewidth=0.5)
+        bars2 = ax.bar(x + width / 2, var_rel, width=width, label="Variance / A", color="#54A24B", edgecolor="#444444", linewidth=0.5)
+
+        ax.axhline(1.0, color="#777777", linestyle="--", linewidth=1)
+        ax.set_xticks(x)
+        ax.set_xticklabels([CONFIG_LABELS.get(c, c) for c in configs])
+        ax.set_ylabel("Relative to A (A = 1.0)")
+        ax.set_title(f"Relative Bias-Variance: {dataset}")
+        ax.legend()
+
+        if len(configs) <= 4:
+            _annotate_bars(ax, bars1, fmt="{:.2f}", rotation=90)
+            _annotate_bars(ax, bars2, fmt="{:.2f}", rotation=90)
+
+    fig.suptitle("Bias-Variance Relative to Single Tree Baseline", fontsize=15, fontweight="bold")
+    out = Path(output_dir) / "bias_variance_relative_to_A.png"
+    _save(fig, out)
+    return out
+
+
 def plot_training_time(results_df: pd.DataFrame, output_dir: str = "project/results") -> Path:
     _apply_style()
     datasets, configs = _prepare(results_df)
@@ -272,6 +368,104 @@ def plot_efficiency_frontier(results_df: pd.DataFrame, output_dir: str = "projec
     return out
 
 
+def plot_normalized_summary(results_df: pd.DataFrame, output_dir: str = "project/results") -> Path:
+    _apply_style()
+    datasets, configs = _prepare(results_df)
+    n_datasets = len(datasets)
+    x = np.arange(len(configs))
+    width = 0.36
+
+    fig, axes = plt.subplots(2, n_datasets, figsize=(7 * n_datasets, 9), squeeze=False)
+
+    for idx, dataset in enumerate(datasets):
+        subset = results_df[results_df["dataset"] == dataset].set_index("config")
+
+        r2 = np.array([float(subset.loc[cfg, "mean_r2"]) for cfg in configs], dtype=np.float64)
+        rmse = np.array([float(subset.loc[cfg, "mean_rmse"]) for cfg in configs], dtype=np.float64)
+        t = np.array([float(subset.loc[cfg, "mean_train_time"]) for cfg in configs], dtype=np.float64)
+
+        # Quality scores (higher is better): relative to best quality.
+        r2_norm = r2 / max(1e-12, np.max(r2))
+        rmse_good = np.min(rmse) / np.maximum(rmse, 1e-12)
+
+        # Runtime cost (lower is better): relative to fastest, where 1.0 is fastest.
+        time_cost = t / max(1e-12, np.min(t))
+
+        ax_q = axes[0, idx]
+        b1 = ax_q.bar(x - width / 2, r2_norm, width=width, label="R² / best", color="#4C78A8")
+        b2 = ax_q.bar(x + width / 2, rmse_good, width=width, label="(best RMSE) / RMSE", color="#54A24B")
+
+        if len(configs) <= 4:
+            _annotate_bars(ax_q, b1, fmt="{:.2f}", rotation=90)
+            _annotate_bars(ax_q, b2, fmt="{:.2f}", rotation=90)
+
+        ax_q.set_xticks(x)
+        ax_q.set_xticklabels([CONFIG_LABELS.get(c, c) for c in configs])
+        ax_q.set_ylim(0.0, 1.08)
+        ax_q.set_ylabel("Quality score [0,1] (higher better)")
+        ax_q.set_title(f"Predictive Quality (relative): {dataset}")
+        ax_q.legend(loc="lower left", fontsize=9)
+
+        ax_t = axes[1, idx]
+        b3 = ax_t.bar(x, time_cost, width=0.55, label="Train time / fastest", color="#F58518")
+
+        if len(configs) <= 4:
+            _annotate_bars(ax_t, b3, fmt="{:.2f}x", rotation=90)
+
+        ax_t.set_xticks(x)
+        ax_t.set_xticklabels([CONFIG_LABELS.get(c, c) for c in configs])
+        ax_t.set_ylabel("Relative runtime cost (1.0 = fastest)")
+        ax_t.set_title(f"Training Time Cost (relative): {dataset}")
+        ax_t.legend(loc="upper left", fontsize=9)
+        ax_t.set_yscale("log")
+        ax_t.grid(True, which="both", axis="y", alpha=0.25)
+
+    fig.suptitle("Interpretability View: Quality vs Runtime Cost", fontsize=15, fontweight="bold")
+    out = Path(output_dir) / "normalized_summary.png"
+    _save(fig, out)
+    return out
+
+
+def plot_seedwise_delta_vs_bagging(seed_results_df: pd.DataFrame, output_dir: str = "project/results") -> Path:
+    _apply_style()
+    datasets = list(dict.fromkeys(seed_results_df["dataset"].tolist()))
+    target_configs = ["A_SingleTree", "C_FeatureRandOnly", "D_FullRandomForest"]
+    labels = [CONFIG_LABELS[c].replace("\n", " ") for c in target_configs]
+
+    fig, axes = plt.subplots(2, len(datasets), figsize=(6.8 * len(datasets), 8), squeeze=False)
+
+    for idx, dataset in enumerate(datasets):
+        subset = seed_results_df[seed_results_df["dataset"] == dataset]
+        pivot_r2 = subset.pivot(index="seed", columns="config", values="r2")
+        pivot_rmse = subset.pivot(index="seed", columns="config", values="rmse")
+
+        r2_deltas = [
+            (pivot_r2[cfg] - pivot_r2["B_BaggingOnly"]).dropna().to_numpy()
+            for cfg in target_configs
+        ]
+        rmse_deltas = [
+            (pivot_rmse[cfg] - pivot_rmse["B_BaggingOnly"]).dropna().to_numpy()
+            for cfg in target_configs
+        ]
+
+        ax1 = axes[0, idx]
+        ax1.boxplot(r2_deltas, tick_labels=labels, showfliers=False)
+        ax1.axhline(0.0, color="#777777", linestyle="--", linewidth=1)
+        ax1.set_title(f"ΔR² vs B (seed-wise): {dataset}")
+        ax1.set_ylabel("R²(config) - R²(B)")
+
+        ax2 = axes[1, idx]
+        ax2.boxplot(rmse_deltas, tick_labels=labels, showfliers=False)
+        ax2.axhline(0.0, color="#777777", linestyle="--", linewidth=1)
+        ax2.set_title(f"ΔRMSE vs B (seed-wise): {dataset}")
+        ax2.set_ylabel("RMSE(config) - RMSE(B)")
+
+    fig.suptitle("Seed-wise Differences Relative to Bagging Baseline", fontsize=15, fontweight="bold")
+    out = Path(output_dir) / "seedwise_delta_vs_bagging.png"
+    _save(fig, out)
+    return out
+
+
 def generate_all_plots(
     results_df: pd.DataFrame | None = None,
     seed_results_df: Optional[pd.DataFrame] = None,
@@ -291,11 +485,15 @@ def generate_all_plots(
         plot_bar_r2(results_df, output_dir=output_dir),
         plot_bar_rmse(results_df, output_dir=output_dir),
         plot_bias_variance_decomposition(results_df, output_dir=output_dir),
+        plot_bias_variance_clarity(results_df, output_dir=output_dir),
+        plot_bias_variance_relative(results_df, output_dir=output_dir),
         plot_training_time(results_df, output_dir=output_dir),
         plot_efficiency_frontier(results_df, output_dir=output_dir),
+        plot_normalized_summary(results_df, output_dir=output_dir),
     ]
 
     if seed_results_df is not None and not seed_results_df.empty:
         outputs.append(plot_seed_stability(seed_results_df, output_dir=output_dir))
+        outputs.append(plot_seedwise_delta_vs_bagging(seed_results_df, output_dir=output_dir))
 
     return outputs
