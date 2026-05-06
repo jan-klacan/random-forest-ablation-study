@@ -2,6 +2,7 @@
 
 ![Language](https://img.shields.io/badge/language-python-blue)
 ![Notebook](https://img.shields.io/badge/notebook-ipynb-orange)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Overview
 This project runs an ablation study for a scratch-built random forest regressor. It compares:
@@ -71,3 +72,7 @@ Generated files are written under project/results/ and include:
 ```bash
 python -m project.plots.plot_preprocessing_summary
 ```
+
+## License
+
+MIT
