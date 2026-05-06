@@ -1,6 +1,6 @@
 # A Random Forest Ablation Study
 
-![Language](https://img.shields.io/badge/language-python-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Notebook](https://img.shields.io/badge/notebook-ipynb-orange)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
